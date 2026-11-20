@@ -1,6 +1,6 @@
 -- DivineWindow.Locales.English.PALADIN
 local function handleBuffDebuffExpirationTime(auraDuration, auraRemainingTime, facets)
-    if (not auraDuration or not auraRemainingTime) then
+    if (not auraDuration or not auraRemainingTime or auraDuration <= 0 or auraRemainingTime <= 0) then
         return 0;
     end
 
@@ -8,25 +8,31 @@ local function handleBuffDebuffExpirationTime(auraDuration, auraRemainingTime, f
 end
 
 local function handleBuffDeBuffStacks(auraStacks, auraTotalStacks, facets)
-    if (not auraStacks or not auraTotalStacks) then
+    if (not auraStacks or auraStacks <= 0) then
         return 0;
     end
-    return math.ceil(facets / auraStacks * auraTotalStacks);
+
+    -- Auras don't report a maximum, so then every stack lights up one more facet.
+    if (not auraTotalStacks or auraTotalStacks <= 0) then
+        return math.min(auraStacks, facets);
+    end
+
+    return math.min(facets, math.ceil(facets * auraStacks / auraTotalStacks));
 end
 
 
 local function handleCooldown(auraDuration, auraRemainingTime, facets)
-    if (not auraDuration or not auraRemainingTime) then
+    if (not auraDuration or not auraRemainingTime or auraDuration <= 0 or auraRemainingTime <= 0) then
         return 0;
     end
     return math.ceil(facets / auraDuration * auraRemainingTime);
 end
 
 local function handleCooldownStacks(auraStacks, auraTotalStacks, facets)
-    if (not auraStacks or not auraTotalStacks) then
+    if (not auraStacks or not auraTotalStacks or auraTotalStacks <= 0) then
         return 0;
     end
-    return math.ceil(facets / auraStacks * auraTotalStacks);
+    return math.min(facets, math.ceil(facets * auraStacks / auraTotalStacks));
 end
 
 
@@ -55,18 +61,30 @@ local function getChosenWindowTextureBasePath(specialisation)
             return nil, nil, nil;
         end
 
-        local basePath = DivineWindow.Windows[category][window].Directory;
+        -- The window's addon may be missing or disabled while saved settings still point to it.
+        local windows = DivineWindow.Windows[category];
+        local windowData = windows and windows[window];
+        if (not windowData) then
+            return nil, nil, nil;
+        end
 
-        return basePath, category, window;
+        return windowData.Directory, category, window;
     end
 
     return nil, nil, nil;
 end
 
 function DivineWindow.Interface.resetTextures()
-    for i = 1, 9 do
+    if (DivineWindow.SteppedTexture.isSupported) then
+        DivineWindow.SteppedTexture.hideAll();
+    end
+
+    -- every PART_x texture in Interface/Index.xml (some windows, e.g. Xal'atath, use up to PART_12)
+    for i = 1, 12 do
         local textureLocation = _G["DivineWindow_Interface_PART_" .. i];
-        textureLocation:SetTexture(nil, false);
+        if (textureLocation) then
+            textureLocation:SetTexture(nil, false);
+        end
     end
 
     _G["DivineWindow_Interface_FX_1"]:SetTexture(nil, false);
@@ -99,6 +117,67 @@ function DivineWindow.Interface.setBaseTextures(
     grain:SetTexture(grainFile, false);
 end
 
+-- Midnight (12.0+): cooldowns and charges are secret in combat, so render them with stacked facet
+-- textures whose visibility the game decides (see Interface/SteppedTexture.lua).
+function DivineWindow.Interface.handleSteppedCooldown(countType, spellName, chosenWindow, windowPart, inverted)
+    local Stepped = DivineWindow.SteppedTexture;
+    local basePath, category, window = getChosenWindowTextureBasePath(chosenWindow);
+
+    if (not (basePath and category and window)) then
+        return;
+    end
+
+    local facets = DivineWindow.Windows[category][window].FacetCount[windowPart];
+    local spellId = Stepped.getSpellId(spellName);
+
+    if (not (facets and spellId)) then
+        return;
+    end
+
+    local alpha = DivineWindowLocalVars.windowColorAlpha or 1;
+    local pathPrefix = basePath .. "\\" .. windowPart .. "\\";
+    local drawLayer = string.find(windowPart, "^FX_") and "OVERLAY" or "BORDER";
+
+    if (countType == DivineWindow.Constants.CountType.COOLDOWN_TIMER) then
+        local duration = Stepped.getCooldownDuration(spellId);
+        if (not duration) then
+            -- no cooldown running: empty, or fully lit when inverted
+            if (inverted) then
+                Stepped.showIndex(windowPart, drawLayer, pathPrefix, facets, facets, alpha);
+            end
+            return;
+        end
+
+        local curves = inverted and Stepped.getInvertedBandCurves(facets, 1, alpha) or
+            Stepped.getBandCurves(facets, 1, alpha);
+        Stepped.showFromCurves(windowPart, drawLayer, pathPrefix, facets, curves,
+            function(curve) return duration:EvaluateRemainingPercent(curve) end);
+        return;
+    end
+
+    if (countType == DivineWindow.Constants.CountType.COOLDOWN_STACKS) then
+        local charges = C_Spell.GetSpellCharges(spellId);
+        if (not charges) then
+            return;
+        end
+
+        local current, maxCharges = charges.currentCharges, charges.maxCharges;
+        if (Stepped.isSecret(maxCharges) or not maxCharges or maxCharges <= 0) then
+            return;
+        end
+
+        -- curve:Evaluate() rejects secret values from addon (tainted) code and there is no
+        -- game-side curve API for charge counts, so leave the part hidden while it is secret.
+        if (not Stepped.isSecret(current)) then
+            local index = handleCooldownStacks(current, maxCharges, facets);
+            if (inverted) then
+                index = facets - index;
+            end
+            Stepped.showIndex(windowPart, drawLayer, pathPrefix, facets, index, alpha);
+        end
+    end
+end
+
 function DivineWindow.Interface.handleWindowFacet(
     countType,
     isOn,
@@ -106,7 +185,7 @@ function DivineWindow.Interface.handleWindowFacet(
     auraRemainingTime,
     auraStacks,
     auraTotalStacks,
-    chosenWindow, windowPart, test
+    chosenWindow, windowPart, test, inverted
 )
     local textureLocation = _G["DivineWindow_Interface_" .. windowPart];
     local currentFacet;
@@ -149,7 +228,20 @@ function DivineWindow.Interface.handleWindowFacet(
         currentFacet = handleCooldownStacks(auraStacks, auraTotalStacks, facets);
     end
 
-    if ((currentFacet == nil or currentFacet == 0) and not test) then
+    if (countType == DivineWindow.Constants.CountType.CHANNELING) then
+        currentFacet = handleBuffDebuffExpirationTime(auraDuration, auraRemainingTime, facets);
+    end
+
+    -- A channeling timer only ever shows while channeling; inverting only reverses it during the channel.
+    local isIdleChannel = countType == DivineWindow.Constants.CountType.CHANNELING and
+        not (auraDuration and auraRemainingTime and auraDuration > 0 and auraRemainingTime > 0);
+
+    -- Inverted: fully lit while off, emptying as the timer/stacks fill up (and the other way round).
+    if (inverted and not isIdleChannel) then
+        currentFacet = facets - math.min(currentFacet or 0, facets);
+    end
+
+    if (currentFacet == nil or currentFacet <= 0) then
         textureLocation:SetTexture(nil, false)
         return;
     end

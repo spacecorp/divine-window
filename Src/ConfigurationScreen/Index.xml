@@ -8,12 +8,13 @@
 <Script file="Src/ConfigurationScreen/Init.lua"/>
 <Script file="Src/ConfigurationScreen/UnlockTable.lua"/>
 <Script file="Src/ConfigurationScreen/GeneralSettings.lua"/>
+<Script file="Src/ConfigurationScreen/SpellSearch.lua"/>
 <Script file="Src/ConfigurationScreen/SpecialisationSettings.lua"/>
 <Script file="Src/ConfigurationScreen/WindowDropdown.lua"/>
 
 <Frame name="DivineWindow_ConfigurationScreen"  toplevel="true" frameStrata="DIALOG" movable="true" enableMouse="true" hidden="false" parent="UIParent" clampedToScreen="true">
     <Size>
-        <AbsDimension x="730" y="600"/>
+        <AbsDimension x="820" y="600"/>
     </Size>
     <Scripts>
         <OnLoad>

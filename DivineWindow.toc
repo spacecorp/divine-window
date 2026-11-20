@@ -4,8 +4,8 @@
 ## Notes: a non-typical configurable interface using stained glass design
 ## Notes-enEN: a non-typical configurable interface using stained glass design
 
-## Interface: 120105, 120100
-## X-Min-Interface: 120105, 120100
+## Interface: 120105, 16001
+## X-Min-Interface: 120105, 16001
 
 ## Version: @project-version@
 ## IconTexture: Interface\AddOns\DivineWindow\addonIcon.jpg
@@ -36,3 +36,8 @@ Src/Windows/Index.xml
 Src/Interface/Index.xml
 Src/ConfigurationScreen/Index.xml
 Src/Commands/Index.xml
+
+# Buff/debuff names for the spell search (generated, see SpellData/Tools)
+# Retail and WoW Forever share this TOC; each data file skips itself on the other game
+SpellData/Data/Retail.lua
+SpellData/Data/Forever.lua

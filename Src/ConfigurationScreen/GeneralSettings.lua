@@ -55,16 +55,20 @@ function DivineWindow.ConfigurationScreen.setWindowBackgroundAlpha(value)
 end
 
 function DivineWindow.ConfigurationScreen.toggleMoving()
-    if (DivineWindow.ConfigurationScreen.isMoving) then
-        DivineWindow.ConfigurationScreen.isMoving = false
-    else
-        DivineWindow.ConfigurationScreen.isMoving = true
-    end
+    DivineWindow.ConfigurationScreen.setMoving(not DivineWindow.ConfigurationScreen.isMoving);
+end
+
+function DivineWindow.ConfigurationScreen.setMoving(enabled)
+    DivineWindow.ConfigurationScreen.isMoving = enabled and true or false;
 
     local placementBoxFrame = _G["DivineWindow_Interface_Window_PLACEMENT_BOX"];
     local interfaceFrame = DivineWindow.Interface.frame;
     local buttonFrame = _G[DivineWindow.ConfigurationScreen.FrameNames.INTERFACE_BACKGROUND_MOVE_BUTTON];
     local currLanguage = DivineWindow.Locales[DivineWindow.language];
+
+    if (not interfaceFrame) then
+        return;
+    end
 
     if (DivineWindow.ConfigurationScreen.isMoving) then
         interfaceFrame:SetFrameStrata("TOOLTIP");
@@ -74,7 +78,9 @@ function DivineWindow.ConfigurationScreen.toggleMoving()
         interfaceFrame:Show();
         placementBoxFrame:Show()
 
-        buttonFrame:SetText(currLanguage.GeneralTab.moveButton_off);
+        if (buttonFrame) then
+            buttonFrame:SetText(currLanguage.GeneralTab.moveButton_off);
+        end
     else
         interfaceFrame:SetFrameStrata("LOW");
         interfaceFrame:EnableMouse(false)
@@ -90,8 +96,31 @@ function DivineWindow.ConfigurationScreen.toggleMoving()
         if (DivineWindowLocalVars.active ~= true) then
             interfaceFrame:Hide()
         end
-        buttonFrame:SetText(currLanguage.GeneralTab.moveButton_on);
+        if (buttonFrame) then
+            buttonFrame:SetText(currLanguage.GeneralTab.moveButton_on);
+        end
     end
+end
+
+-- Blizzard's Edit Mode (retail): make the window movable while Edit Mode is open, like the
+-- move button in the configuration screen does. Clients without Edit Mode skip this.
+if (EventRegistry and EventRegistry.RegisterCallback and EditModeManagerFrame) then
+    local startedByEditMode = false;
+
+    EventRegistry:RegisterCallback("EditMode.Enter", function()
+        if (not DivineWindow.ConfigurationScreen.isMoving) then
+            startedByEditMode = true;
+            DivineWindow.ConfigurationScreen.setMoving(true);
+        end
+    end, DivineWindow);
+
+    EventRegistry:RegisterCallback("EditMode.Exit", function()
+        -- leave it alone when moving was switched on from the configuration screen
+        if (startedByEditMode) then
+            startedByEditMode = false;
+            DivineWindow.ConfigurationScreen.setMoving(false);
+        end
+    end, DivineWindow);
 end
 
 DivineWindow.Utilities.debugPrint("Src/ConfigurationScreen/GeneralSettings.lua", "file")

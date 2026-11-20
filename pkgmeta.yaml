@@ -19,5 +19,8 @@ ignore:
   - .idea
   - .vscode
   - .DS_Store
+  - .cache
+  - generate_spell_data.py
+  - Tools
 
 license-output: LICENSE.txt

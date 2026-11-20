@@ -108,7 +108,18 @@ local function handleCooldown(spellName)
     end
     local spellCharges = C_Spell.GetSpellCharges(spellName);
     if (spellCharges == nil) then
-        return nil, nil, nil, nil, nil;
+        -- Spells without charges (e.g. Divine Steed without Cavalier) only have a regular cooldown.
+        local cooldown = C_Spell.GetSpellCooldown(spellName);
+        if (not cooldown or cooldown.isOnGCD) then
+            return nil, nil, nil, nil, nil;
+        end
+
+        local start, duration = cooldown.startTime, cooldown.duration;
+        if (not (start and start > 0 and duration and duration > 0)) then
+            return spellName, 0, 0, 1, 1;
+        end
+
+        return spellName, DivineWindow.Utilities.round(start + duration - GetTime()), duration, 0, 1;
     end
 
     local auraStacks, auraTotalStacks, auraStart, auraDuration, _ = spellCharges.currentCharges,
@@ -118,7 +129,9 @@ local function handleCooldown(spellName)
     local auraRemainingTime = 0;
 
 
-    if (hasCooldown) then
+    -- Only count down once every charge is used; while a charge is left the spell is ready.
+    -- The running recharge is always the one that finishes first.
+    if (hasCooldown and auraStacks and auraStacks <= 0) then
         auraRemainingTime = DivineWindow.Utilities.round(auraStart + auraDuration - GetTime());
     end;
 
@@ -127,6 +140,11 @@ local function handleCooldown(spellName)
 end
 
 local function handleAura(name, aura)
+    -- Midnight: aura timings are secret in combat; aura windows aren't supported there (yet).
+    if (DivineWindow.SteppedTexture.isSecret(aura.expirationTime) or DivineWindow.SteppedTexture.isSecret(aura.duration)) then
+        return;
+    end
+
     local time = GetTime();
     local totalDuration = aura.duration;
     local remaintingTime = aura.expirationTime > 0 and aura.expirationTime - time or 0;
@@ -146,9 +164,36 @@ local function handleAura(name, aura)
 
     return
         name,
-        aura.durationstacks,
+        aura.applications,
         DivineWindow.Utilities.round(remaintingTime),
         DivineWindow.Utilities.round(totalDuration)
+end
+
+-- Channeling timer: remaining and total time of the spell the player is channeling right now.
+local function handleChannel(spellName)
+    local _, name, startTimeMS, endTimeMS;
+    if (UnitChannelInfo) then
+        name, _, _, startTimeMS, endTimeMS = UnitChannelInfo("player");
+    end
+
+    -- WoW Forever reports channeled spells as regular casts
+    if (name == nil and UnitCastingInfo) then
+        name, _, _, startTimeMS, endTimeMS = UnitCastingInfo("player");
+    end
+
+    local isSecret = DivineWindow.SteppedTexture.isSecret;
+
+    -- nothing channeled, another spell, or (Midnight) hidden from addons
+    if (not name or isSecret(name) or isSecret(startTimeMS) or isSecret(endTimeMS) or name ~= spellName) then
+        return;
+    end
+
+    local duration = (endTimeMS - startTimeMS) / 1000;
+    if (duration <= 0) then
+        return;
+    end
+
+    return math.max(endTimeMS / 1000 - GetTime(), 0), duration;
 end
 
 -- Shows the current window based on the active specialisation;
@@ -163,6 +208,58 @@ local function getActiveWindowToShow()
     end
 
     return DivineWindow.specialisation;
+end
+
+-- Preview of a single window part, started from the configuration screen.
+DivineWindow.Interface.activePreview = nil;
+
+function DivineWindow.Interface.startPreview(specialisation, countType, windowPart, duration, inverted)
+    DivineWindow.Interface.activePreview = {
+        inverted = inverted,
+        specialisation = specialisation,
+        countType = countType,
+        windowPart = windowPart,
+        duration = duration,
+        endsAt = GetTime() + duration,
+    };
+
+    -- draw the first frame straight away instead of waiting for the next update
+    local frame = DivineWindow.Interface.frame;
+    if (frame) then
+        frame.TimeSinceLastUpdate = DivineWindow.Interface.updateInterface + 1;
+    end
+end
+
+local function drawPreview()
+    local preview = DivineWindow.Interface.activePreview;
+    if (not preview) then
+        return;
+    end
+
+    local remaining = preview.endsAt - GetTime();
+    if (remaining <= 0) then
+        DivineWindow.Interface.activePreview = nil;
+        return;
+    end
+
+    local CountType = DivineWindow.Constants.CountType;
+    local countType = preview.countType;
+    local isTimer = countType == CountType.BUFF_DEBUFF_EXPIRATION_TIME or countType == CountType.COOLDOWN_TIMER
+        or countType == CountType.CHANNELING;
+    local isStacks = countType == CountType.BUFF_DEBUFF_STACKS or countType == CountType.COOLDOWN_STACKS;
+
+    DivineWindow.Interface.handleWindowFacet(
+        countType,
+        countType == CountType.ON_OFF,
+        isTimer and preview.duration or 0,
+        isTimer and remaining or 0,
+        isStacks and math.ceil(remaining) or 0,
+        isStacks and preview.duration or 0,
+        preview.specialisation,
+        preview.windowPart,
+        true,
+        preview.inverted
+    );
 end
 
 function DivineWindow.Interface.onUpdate(self, elapsed)
@@ -190,11 +287,13 @@ function DivineWindow.Interface.onUpdate(self, elapsed)
                 local windowPart = spellConfiguration.windowPart;
                 local aura, auraName, isOn, auraDuration, auraRemainingTime, auraStacks, auraTotalStacks;
 
-                -- stop processing if spell-set-up is not complete
-                if (not (windowPart and countType and spellName)) then
-                    return;
-                end
+                -- skip rows whose set-up is not complete (e.g. a freshly added row) and the part
+                -- that is being previewed, which drawPreview takes care of
+                local preview = DivineWindow.Interface.activePreview;
+                local isComplete = windowPart and countType and spellName and spellName ~= "";
+                local isPreviewed = preview and preview.windowPart == windowPart;
 
+                if (isComplete and not isPreviewed) then
 
                 if (countType == DivineWindow.Constants.CountType.BUFF_DEBUFF_EXPIRATION_TIME or countType == DivineWindow.Constants.CountType.BUFF_DEBUFF_STACKS) then
                     if (AuraUtil.FindAuraByName(spellName, DivineWindow.Interface.target, "HARMFUL")) then
@@ -227,28 +326,45 @@ function DivineWindow.Interface.onUpdate(self, elapsed)
                             AuraUtil.FindAuraByName(spellName, DivineWindow.Interface.target, "RAID")
                         ) then
                         isOn = true;
+                    elseif (DivineWindow.Interface.target == "player" and DivineWindow.AuraTracker.isActive(spellName)) then
+                        -- Midnight: in combat the name lookup finds nothing; follow the aura seen before combat
+                        isOn = true;
                     end
                 end
 
-                if (countType == DivineWindow.Constants.CountType.COOLDOWN_TIMER or countType == DivineWindow.Constants.CountType.COOLDOWN_STACKS) then
-                    auraName, auraRemainingTime, auraDuration, auraStacks, auraTotalStacks = handleCooldown(spellName);
+                if (countType == DivineWindow.Constants.CountType.CHANNELING) then
+                    auraRemainingTime, auraDuration = handleChannel(spellName);
                 end
 
+                local inverted = spellConfiguration.inverted == true;
+                local isCooldown = countType == DivineWindow.Constants.CountType.COOLDOWN_TIMER or
+                    countType == DivineWindow.Constants.CountType.COOLDOWN_STACKS;
 
+                if (isCooldown and DivineWindow.SteppedTexture.isSupported) then
+                    DivineWindow.Interface.handleSteppedCooldown(countType, spellName, activeWindow, windowPart, inverted);
+                else
+                    if (isCooldown) then
+                        auraName, auraRemainingTime, auraDuration, auraStacks, auraTotalStacks = handleCooldown(spellName);
+                    end
 
-                DivineWindow.Interface.handleWindowFacet(
-                    countType,
-                    isOn,
-                    auraDuration,
-                    auraRemainingTime,
-                    auraStacks,
-                    auraTotalStacks,
-                    activeWindow,
-                    windowPart
-                );
+                    DivineWindow.Interface.handleWindowFacet(
+                        countType,
+                        isOn,
+                        auraDuration,
+                        auraRemainingTime,
+                        auraStacks,
+                        auraTotalStacks,
+                        activeWindow,
+                        windowPart,
+                        false,
+                        inverted
+                    );
+                end
+                end
             end
         end
 
+        drawPreview();
         self.TimeSinceLastUpdate = 0;
     end
 end
@@ -290,11 +406,11 @@ function DivineWindow.Interface.eventHandler(_, event, arg1, ...)
     end
 
 
-    if (event == "PLAYER_REGEN_DISABLED" and C_SpecializationInfo.IsInitialized()) then
+    if (event == "PLAYER_REGEN_DISABLED" and DivineWindow.Utilities.specialisationsReady()) then
         DivineWindow.Interface.frame:SetAlpha(DivineWindow.Interface.getInCombatAlpha());
     end
 
-    if (event == "PLAYER_REGEN_ENABLED" and C_SpecializationInfo.IsInitialized()) then
+    if (event == "PLAYER_REGEN_ENABLED" and DivineWindow.Utilities.specialisationsReady()) then
         DivineWindow.Interface.frame:SetAlpha(DivineWindow.Interface.getOutOfCombatAlpha());
     end
 end

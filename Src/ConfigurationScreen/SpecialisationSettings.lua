@@ -1,3 +1,7 @@
+-- x positions of the last two columns of a spell row
+local INVERT_COLUMN_X = 650;
+local DELETE_COLUMN_X = 710;
+
 local function rearrangeEditRows(specialisation, parentFrame)
     local windowSpellConfiguration = DivineWindow.Utilities.getWindowConfiguration(specialisation);
     local hiddenItems = 0;
@@ -19,6 +23,8 @@ local function rearrangeEditRows(specialisation, parentFrame)
             DivineWindow.ConfigurationScreen.FrameNames.SPELL_DELETE_ROW .. specialisation .. '_' .. index]
             local previewButton = _G
                 [DivineWindow.ConfigurationScreen.FrameNames.SPELL_PREVIEW_BUTTON_NAME .. specialisation .. '_' .. index];
+            local invertCheckbox = _G
+                [DivineWindow.ConfigurationScreen.FrameNames.SPELL_INVERT_CHECKBOX_NAME .. specialisation .. '_' .. index];
 
             -- if row is deleted; then just hide them for now, as we cannot remove interface items
             if (deleted) then
@@ -28,12 +34,16 @@ local function rearrangeEditRows(specialisation, parentFrame)
                 if (countTypeBox) then countTypeBox:Hide(); end
                 if (windowPartBox) then windowPartBox:Hide(); end
                 if (deleteRowButton) then deleteRowButton:Hide(); end
+                if (invertCheckbox) then invertCheckbox:Hide(); end
             else
                 previewButton:SetPoint("TOPLEFT", parentFrame, "TOP", 15, (-40 * newIndex) + 36);
                 spellBox:SetPoint("TOPLEFT", parentFrame, "TOP", 60, (-40 * newIndex) + 36);
                 countTypeBox:SetPoint("TOPLEFT", parentFrame, "TOP", 260, (-40 * newIndex) + 40);
                 windowPartBox:SetPoint("TOPLEFT", parentFrame, "TOP", 445, (-40 * newIndex) + 40);
-                deleteRowButton:SetPoint("TOPLEFT", parentFrame, "TOP", 640, (-40 * newIndex) + 36);
+                if (invertCheckbox) then
+                    invertCheckbox:SetPoint("TOPLEFT", parentFrame, "TOP", INVERT_COLUMN_X, (-40 * newIndex) + 38);
+                end
+                deleteRowButton:SetPoint("TOPLEFT", parentFrame, "TOP", DELETE_COLUMN_X, (-40 * newIndex) + 36);
             end
         end
     end
@@ -48,9 +58,17 @@ local function addEditBox(parentFrame, name, text, specialisation, saveIndex)
     editBox:SetMaxLetters(100)
     editBox:SetMultiLine(false)
     editBox:Show()
-    editBox:SetScript("OnTextChanged", function(self)
-        DivineWindowLocalVars.specialisation[specialisation].spells[saveIndex].name = self:GetText() or "";
-    end)
+
+    -- Typing only searches; the spell is saved when one is picked from the list.
+    DivineWindow.SpellSearch.attach(editBox,
+        function()
+            return DivineWindowLocalVars.specialisation[specialisation].spells[saveIndex].name or "";
+        end,
+        function(spellName, spellId)
+            local spell = DivineWindowLocalVars.specialisation[specialisation].spells[saveIndex];
+            spell.name = spellName;
+            spell.spellId = spellId;
+        end)
     return editBox
 end
 
@@ -176,6 +194,12 @@ local function windowPartMenuInfo(saveToIndex, specialisation, chosenWindow)
             return;
         end
 
+        -- Read the window that is selected right now: the one passed in was captured when the
+        -- row was created and goes stale once a (different) window is picked afterwards.
+        local savedConfiguration = DivineWindowLocalVars.specialisation and
+            DivineWindowLocalVars.specialisation[specialisation];
+        local currentWindow = (savedConfiguration and savedConfiguration.chosenWindow) or chosenWindow or {};
+
         local info = UIDropDownMenu_CreateInfo()
         wipe(info);
         info.arg2 = saveToIndex;
@@ -194,11 +218,14 @@ local function windowPartMenuInfo(saveToIndex, specialisation, chosenWindow)
             info.arg2         = saveToIndex;
             info.func         = windowPartMenuInfo_OnClick(specialisation);
 
-            local category    = chosenWindow[1];
-            local window      = chosenWindow[2];
+            local category    = currentWindow[1];
+            local window      = currentWindow[2];
 
-            local translation = DivineWindow.Locales[DivineWindow.language][category][window]
-                .WindowPart[windowPart]
+            -- The window's addon may be missing or disabled while saved settings still point to it.
+            local categoryLocales = DivineWindow.Locales[DivineWindow.language][category];
+            local windowLocales = categoryLocales and categoryLocales[window];
+            local translation = windowLocales and windowLocales.WindowPart and
+                windowLocales.WindowPart[windowPart];
 
             if (translation == nil) then
                 info.disabled = true;
@@ -273,34 +300,15 @@ local function deleteRow(index, specialisation)
     _G[DivineWindow.ConfigurationScreen.FrameNames.SPELL_WINDOW_PART_DROPDOWN_NAME .. specialisation .. "_" .. index]
         :SetHeight(0);
     _G[DivineWindow.ConfigurationScreen.FrameNames.SPELL_DELETE_ROW .. specialisation .. '_' .. index]:SetHeight(0);
+    local invertCheckbox = _G[DivineWindow.ConfigurationScreen.FrameNames.SPELL_INVERT_CHECKBOX_NAME ..
+        specialisation .. '_' .. index];
+    if (invertCheckbox) then invertCheckbox:Hide(); end
 
     local windowSpellConfiguration = DivineWindow.Utilities.getWindowConfiguration(specialisation);
     resizeScrollFrame(#windowSpellConfiguration.spells, specialisation);
 end
 
-local function preview(index, specialisation, spell, time)
-    local timer = time;
-    return function()
-        DivineWindow.Interface.handleWindowFacet(
-            spell.countType,
-            DivineWindow.Constants.CountType.ON_OFF == spell.countType and timer > 0 or false,
-            (DivineWindow.Constants.CountType.BUFF_DEBUFF_EXPIRATION_TIME == spell.countType or DivineWindow.Constants.CountType.COOLDOWN_TIMER == spell.countType) and
-            time or 0,
-            (DivineWindow.Constants.CountType.BUFF_DEBUFF_EXPIRATION_TIME == spell.countType or DivineWindow.Constants.CountType.COOLDOWN_TIMER == spell.countType) and
-            timer or 0,
-            (DivineWindow.Constants.CountType.BUFF_DEBUFF_STACKS == spell.countType or DivineWindow.Constants.CountType.COOLDOWN_STACKS == spell.countType) and
-            time or 0,
-            (DivineWindow.Constants.CountType.BUFF_DEBUFF_STACKS == spell.countType or DivineWindow.Constants.CountType.COOLDOWN_STACKS == spell.countType)
-            and timer or 0,
-            specialisation,
-            spell.windowPart,
-            timer > 0
-        )
-        timer = timer - 1;
-    end
-end
-
-
+local PREVIEW_DURATION = 5; -- seconds
 
 local function createPreviewButton(buttonName, parentFrame, index, specialisation)
     local previewButton = CreateFrame("Button", buttonName, parentFrame, "UIPanelButtonTemplate")
@@ -310,22 +318,45 @@ local function createPreviewButton(buttonName, parentFrame, index, specialisatio
     previewButton:SetSize(20, 20)
 
     previewButton:SetScript("OnClick", function()
-        local function nilFunc() end
-        local previewTimer = C_Timer.NewTicker(0, nilFunc)
-        local previewTime = 0.5; -- seconds
-        local runningTime = 6
-
         local spell = DivineWindowLocalVars.specialisation[specialisation].spells[index]
         if (not (spell and spell.countType and spell.windowPart)) then
-            previewTimer:Cancel()
             return;
         end
 
-        C_Timer.NewTicker(previewTime, preview(index, specialisation, spell, runningTime - 1), runningTime)
-        previewTimer:Cancel()
+        -- The interface update loop draws the preview (see DivineWindow.Interface.onUpdate), so it
+        -- is not wiped and redrawn by that loop in between, which made it flicker.
+        DivineWindow.Interface.startPreview(specialisation, spell.countType, spell.windowPart, PREVIEW_DURATION,
+            spell.inverted);
     end)
 
     return previewButton;
+end
+
+-- Inverts the part: full while the timer/aura is off, emptying instead of filling up.
+local function createInvertCheckbox(checkboxName, parentFrame, index, specialisation)
+    local labels = DivineWindow.Locales[DivineWindow.language].Labels;
+    local checkbox = CreateFrame("CheckButton", checkboxName, parentFrame, "UICheckButtonTemplate")
+    checkbox:SetSize(24, 24);
+
+    local spell = DivineWindowLocalVars.specialisation[specialisation].spells[index];
+    checkbox:SetChecked(spell and spell.inverted == true);
+    checkbox:Show();
+
+    checkbox:SetScript("OnClick", function(self)
+        local spellToChange = DivineWindowLocalVars.specialisation[specialisation].spells[index];
+        if (spellToChange) then
+            spellToChange.inverted = self:GetChecked() and true or nil;
+        end
+    end)
+    checkbox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
+        GameTooltip:SetText(labels.invert, 1, 1, 1);
+        GameTooltip:AddLine(labels.invertTooltip, nil, nil, nil, true);
+        GameTooltip:Show();
+    end)
+    checkbox:SetScript("OnLeave", function() GameTooltip:Hide(); end)
+
+    return checkbox;
 end
 
 local function createDeleteButton(buttonName, parentFrame, index, specialisation)
@@ -372,7 +403,7 @@ local function addRow(self, specialisation, parentFrame, chosenWindow)
 
         local spellBox = addEditBox(parentFrame,
             DivineWindow.ConfigurationScreen.FrameNames.SPELL_SPELL_NAME_DROPDOWN_NAME .. specialisation .. "_" .. newId,
-            "nothing",
+            "",
             specialisation,
             newId);
         local countTypeBox = createCountTypeDropDownBox(
@@ -387,12 +418,16 @@ local function addRow(self, specialisation, parentFrame, chosenWindow)
             DivineWindow.ConfigurationScreen.FrameNames.SPELL_DELETE_ROW .. specialisation .. '_' .. newId,
             parentFrame, newId,
             specialisation);
+        local invertCheckbox = createInvertCheckbox(
+            DivineWindow.ConfigurationScreen.FrameNames.SPELL_INVERT_CHECKBOX_NAME .. specialisation .. '_' .. newId,
+            parentFrame, newId, specialisation);
 
         previewButton:SetPoint("TOPLEFT", parentFrame, "TOP", 15, (-40 * newId) + 36);
         spellBox:SetPoint("TOPLEFT", parentFrame, "TOP", 60, -40 * newId);
         countTypeBox:SetPoint("TOPLEFT", parentFrame, "TOP", 260, (-40 * newId) + 4);
         windowPartBox:SetPoint("TOPLEFT", parentFrame, "TOP", 445, (-40 * newId) + 4);
-        deleteRowButton:SetPoint("TOPLEFT", parentFrame, "TOP", 640, -40 * newId);
+        invertCheckbox:SetPoint("TOPLEFT", parentFrame, "TOP", INVERT_COLUMN_X, (-40 * newId) + 2);
+        deleteRowButton:SetPoint("TOPLEFT", parentFrame, "TOP", DELETE_COLUMN_X, -40 * newId);
         spellBox:SetFocus();
         resizeScrollFrame(#windowSpellConfiguration.spells, specialisation);
     end
@@ -418,7 +453,7 @@ function DivineWindow.ConfigurationScreen.generateEditBoxPerSpecialisation(speci
             if (deleted) then
                 hiddenItems = hiddenItems + 1;
             else
-                newIndex = newIndex + 1;
+                -- same row positions as rearrangeEditRows, so rows don't jump when one is added
                 local spellBox = addEditBox(specialisationFrameScrollBox,
                     DivineWindow.ConfigurationScreen.FrameNames.SPELL_SPELL_NAME_DROPDOWN_NAME ..
                     specialisation .. "_" .. index,
@@ -441,16 +476,33 @@ function DivineWindow.ConfigurationScreen.generateEditBoxPerSpecialisation(speci
                     specialisation .. '_' .. index,
                     specialisationFrameScrollBox, index,
                     specialisation);
+                local invertCheckbox = createInvertCheckbox(
+                    DivineWindow.ConfigurationScreen.FrameNames.SPELL_INVERT_CHECKBOX_NAME ..
+                    specialisation .. '_' .. index,
+                    specialisationFrameScrollBox, index,
+                    specialisation);
 
                 previewButton:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", 15, (-40 * newIndex) + 36);
                 spellBox:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", 60, (-40 * newIndex) + 36);
                 countTypeBox:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", 260, (-40 * newIndex) + 40);
                 windowPartBox:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", 445, (-40 * newIndex) + 40);
-                deleteRowButton:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", 640, (-40 * newIndex) + 36);
+                invertCheckbox:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", INVERT_COLUMN_X,
+                    (-40 * newIndex) + 38);
+                deleteRowButton:SetPoint("TOPLEFT", specialisationFrameScrollBox, "TOP", DELETE_COLUMN_X,
+                    (-40 * newIndex) + 36);
             end
         end
 
         resizeScrollFrame(#windowSpellConfiguration.spells, specialisation, specialisationFrameScrollBox);
+    end
+end
+
+-- Fit a tab to its text; Blizzard's tab template keeps its own text width otherwise ("Window ...").
+local function sizeTabToText(tab, text)
+    if (PanelTemplates_TabResize) then
+        PanelTemplates_TabResize(tab, 0);
+    else
+        tab:SetWidth((string.len(text) * 8) + 10);
     end
 end
 
@@ -506,6 +558,7 @@ local function generateSpecialisationTab(tabIndex, specialisation)
         if (not newWindow) then
             return;
         end
+        chosenWindow = newWindow; -- rows added later must use the newly picked window
         -- iterate over all spells and recreate the edit boxes
         local windowSpellConfiguration = DivineWindow.Utilities.getWindowConfiguration(specialisation);
         if (windowSpellConfiguration and windowSpellConfiguration.isSetUp) then
@@ -513,10 +566,13 @@ local function generateSpecialisationTab(tabIndex, specialisation)
                 local dropdown = DivineWindow.ConfigurationScreen.FrameNames.SPELL_WINDOW_PART_DROPDOWN_NAME ..
                     specialisation .. "_" .. index;
 
-                UIDropDownMenu_Initialize(
-                    _G[dropdown],
-                    windowPartMenuInfo(index, specialisation, newWindow))
-                UIDropDownMenu_SetSelectedValue(_G[dropdown], spellConfiguration.windowPart);
+                -- deleted rows never got a dropdown
+                if (_G[dropdown]) then
+                    UIDropDownMenu_Initialize(
+                        _G[dropdown],
+                        windowPartMenuInfo(index, specialisation, newWindow))
+                    UIDropDownMenu_SetSelectedValue(_G[dropdown], spellConfiguration.windowPart);
+                end
             end
         end
     end
@@ -543,7 +599,8 @@ local function generateSpecialisationTab(tabIndex, specialisation)
         -130);
     createText(labels.timer, specialisationFrame):SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 230, -130);
     createText(labels.windowPart, specialisationFrame):SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 450, -130);
-    createText(labels.delete, specialisationFrame):SetPoint("TOPLEFT", parentFrame, "TOPLEFT", 570, -130);
+    createText(labels.invert, specialisationFrame):SetPoint("TOPLEFT", parentFrame, "TOPLEFT", INVERT_COLUMN_X - 88, -130);
+    createText(labels.delete, specialisationFrame):SetPoint("TOPLEFT", parentFrame, "TOPLEFT", DELETE_COLUMN_X - 70, -130);
 
     -- create some lines:
     local line = specialisationFrame:CreateLine()
@@ -591,8 +648,9 @@ local function generateSpecialisationTab(tabIndex, specialisation)
     end
 
     tab:SetPoint("LEFT", tabAnchorName, "RIGHT", 10, 0)
-    tab:SetText(specialisation)
-    tab:SetWidth((string.len(specialisation) * 8) + 10);
+    local tabText = DivineWindow.Utilities.getSpecialisationDisplayName(specialisation);
+    tab:SetText(tabText)
+    sizeTabToText(tab, tabText);
     tab:SetScript("OnClick", DivineWindow.ConfigurationScreen.setActiveTab(tabIndex, specialisation))
     tab:RegisterForClicks("AnyDown")
     tab:Show();
@@ -601,14 +659,14 @@ local function generateSpecialisationTab(tabIndex, specialisation)
 end
 
 function DivineWindow.ConfigurationScreen.removeDeletedItems()
-    local numberOfSpecialisations = DivineWindow.numberOfSpecialisations;
-    for i = 1, numberOfSpecialisations do
-        local _, specialisation, _, _, _, _ = GetSpecializationInfo(i);
+    for _, specialisation in ipairs(DivineWindow.Utilities.getSpecialisationNames()) do
         local windowSpellConfiguration = DivineWindow.Utilities.getWindowConfiguration(specialisation);
 
-        for index, spellConfiguration in ipairs(windowSpellConfiguration.spells) do
-            if (spellConfiguration.deleted) then
-                table.remove(DivineWindowLocalVars.specialisation[specialisation].spells, index);
+        if (windowSpellConfiguration) then
+            for index, spellConfiguration in ipairs(windowSpellConfiguration.spells) do
+                if (spellConfiguration.deleted) then
+                    table.remove(DivineWindowLocalVars.specialisation[specialisation].spells, index);
+                end
             end
         end
     end
@@ -616,9 +674,9 @@ end
 
 -- only use when talents are initialized;
 function DivineWindow.ConfigurationScreen.generateScreensForAllSpecialisations()
-    local numberOfSpecialisations = DivineWindow.numberOfSpecialisations;
-    for i = 1, numberOfSpecialisations do
-        local _, specialisation, _, _, _, _ = GetSpecializationInfo(i);
+    local specialisationNames = DivineWindow.Utilities.getSpecialisationNames();
+    local numberOfSpecialisations = #specialisationNames;
+    for i, specialisation in ipairs(specialisationNames) do
         generateSpecialisationTab(i, specialisation);
     end
 
@@ -629,11 +687,31 @@ function DivineWindow.ConfigurationScreen.generateScreensForAllSpecialisations()
         numberOfSpecialisations];
     infoTab:SetPoint("LEFT", buttonAnchor, "RIGHT", 10, 0)
     infoTab:SetText(DivineWindow.Locales[DivineWindow.language].InfoTab.tabTitle)
+    sizeTabToText(infoTab, DivineWindow.Locales[DivineWindow.language].InfoTab.tabTitle);
 
     infoTab:SetScript("OnClick",
         function() DivineWindow.ConfigurationScreen.openConfigTab(numberOfSpecialisations + 1) end);
     infoTab:RegisterForClicks("AnyDown")
     infoTab:Show();
+
+    -- Let Blizzard's tab code manage the tabs: it shows the "selected" artwork on the active tab
+    -- only. Unmanaged tabs show both the normal and the selected artwork on top of each other.
+    local frame = DivineWindow.ConfigurationScreen.frame;
+    local tabs = { _G[DivineWindow.ConfigurationScreen.FrameNames.GENERAL_TAB_NAME] };
+    for i = 1, numberOfSpecialisations do
+        table.insert(tabs, _G[DivineWindow.ConfigurationScreen.FrameNames.SPECIALISATION_SCREEN_TAB_BUTTON_NAME .. i]);
+    end
+    table.insert(tabs, infoTab);
+
+    for id, tabButton in ipairs(tabs) do
+        tabButton:SetID(id);
+    end
+    frame.Tabs = tabs;
+
+    if (PanelTemplates_SetNumTabs and PanelTemplates_SetTab) then
+        PanelTemplates_SetNumTabs(frame, #tabs);
+        PanelTemplates_SetTab(frame, (DivineWindow.ConfigurationScreen.activeTab or 0) + 1);
+    end
 end
 
 DivineWindow.Utilities.debugPrint("Src/ConfigurationScreen/SpecialisationSettings.lua", "file")

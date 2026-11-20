@@ -6,15 +6,13 @@ DivineWindow.supportedSpecialisations = nil; -- Player's current specialisation
 DivineWindow.language = "English";           -- Player's preferred language
 
 local function updateDivineWindowType()
-    if (C_SpecializationInfo.IsInitialized()) then
-        local activeSpecialisationId                  = GetSpecialization()
-        local numSpecializations                      = GetNumSpecializations();
-        local _, activeSpecialisationName, _, _, _, _ = GetSpecializationInfo(activeSpecialisationId)
-        local _, _, playerClass, _, _                 = DivineWindow.Utilities.getPlayerInformation();
+    if (DivineWindow.Utilities.specialisationsReady()) then
+        local _, _, playerClass, _, _         = DivineWindow.Utilities.getPlayerInformation();
 
-        DivineWindow.specialisation                   = activeSpecialisationName;
-        DivineWindow.numberOfSpecialisations          = numSpecializations;
-        DivineWindow.supportedSpecialisations         = DivineWindow.Support.ClassesAndSpecialisations[playerClass];
+        -- without specialisations this is "General" and 1 (see Utilities.getSpecialisationNames)
+        DivineWindow.specialisation           = DivineWindow.Utilities.getActiveSpecialisationName();
+        DivineWindow.numberOfSpecialisations  = #DivineWindow.Utilities.getSpecialisationNames();
+        DivineWindow.supportedSpecialisations = DivineWindow.Support.ClassesAndSpecialisations[playerClass];
     end
 end
 
@@ -55,8 +53,11 @@ local function setupInitialSavedVariables()
     DivineWindow.Utilities.debugPrint("setupInitialSavedVariables now set");
 end
 
+local hasWarnedNoWindow = false;
+
 local function warnIfNoWindowIsInstalled()
-    if (DivineWindow.Utilities.tableIsEmpty(DivineWindow.ConfigurationScreen.AvailableWindows)) then
+    if (not hasWarnedNoWindow and DivineWindow.Utilities.tableIsEmpty(DivineWindow.ConfigurationScreen.AvailableWindows)) then
+        hasWarnedNoWindow = true;
         DivineWindow.Utilities.printToUser("DivineWindow: No windows are installed. Please install a window to use the addon.");
     end
 end
@@ -67,7 +68,8 @@ local function eventHandler(self, event, arg1)
         setupInitialSavedVariables();
     end
 
-    if (DivineWindow.Constants and event == "PLAYER_TALENT_UPDATE") then
+    -- Versions without specialisations may never send PLAYER_TALENT_UPDATE at login.
+    if (DivineWindow.Constants and (event == "PLAYER_TALENT_UPDATE" or event == "PLAYER_ENTERING_WORLD")) then
         updateDivineWindowType();
         warnIfNoWindowIsInstalled();
     end

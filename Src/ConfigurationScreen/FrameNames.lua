@@ -48,6 +48,7 @@ DivineWindow.ConfigurationScreen.FrameNames = {
     SPECIALISATION_SCREEN_WINDOW_DROPDOWN_NAME = "DivineWindow_ConfigurationScreen_Specialisation_Window_Dropdown",
 
     SPELL_PREVIEW_BUTTON_NAME = "Preview_Button_",
+    SPELL_INVERT_CHECKBOX_NAME = "Invert_Checkbox_",
     SPELL_SPELL_NAME_DROPDOWN_NAME = "SpellName_",
     SPELL_COUNTDOWN_TYPE_DROPDOWN_NAME = "SpellCountdownType_",
     SPELL_WINDOW_PART_DROPDOWN_NAME = "WindowPart_",

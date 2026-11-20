@@ -139,15 +139,84 @@ function DivineWindow.Utilities.getWindowConfiguration(specialisation)
   return nil
 end
 
-function DivineWindow.Utilities.classHasSupportedSpecialisation()
-  if (DivineWindow.specialisation and DivineWindow.supportedSpecialisations) then
-    local hasSupportedSpecialisation = DivineWindow.Utilities.tableContainsValue(
-      DivineWindow.supportedSpecialisations, DivineWindow.specialisation);
-    DivineWindow.Utilities.debugPrint("Has supported specialisation: " .. tostring(hasSupportedSpecialisation))
-    return hasSupportedSpecialisation
+-- Some WoW versions (e.g. Classic Era) have no class specialisations. Those use one set of
+-- settings stored under this name, e.g. DivineWindowLocalVars.specialisation.General and
+-- DivineWindow.Windows.PALADIN.DefaultSettings.General.
+DivineWindow.GENERAL_SPECIALISATION = "General";
+
+function DivineWindow.Utilities.hasSpecialisations()
+  if (not (GetSpecialization and GetNumSpecializations and GetSpecializationInfo)) then
+    return false
   end
 
-  return false
+  local numberOfSpecialisations = GetNumSpecializations();
+  if (not numberOfSpecialisations or numberOfSpecialisations <= 0) then
+    return false
+  end
+
+  local _, firstSpecialisationName = GetSpecializationInfo(1);
+  if (firstSpecialisationName == nil) then
+    return false
+  end
+
+  -- Versions where talents come from a skill tree instead (e.g. WoW Forever) may still have
+  -- these functions, but the player never has an active specialisation there.
+  local activeSpecialisationId = GetSpecialization();
+  return activeSpecialisationId ~= nil and activeSpecialisationId > 0
+end
+
+-- True once the specialisation information can be read (always, on versions without them).
+function DivineWindow.Utilities.specialisationsReady()
+  if (C_SpecializationInfo and C_SpecializationInfo.IsInitialized and GetSpecialization) then
+    return C_SpecializationInfo.IsInitialized()
+  end
+
+  return true
+end
+
+-- Names of all specialisations of the player's class, or { "General" } without specialisations.
+function DivineWindow.Utilities.getSpecialisationNames()
+  if (not DivineWindow.Utilities.hasSpecialisations()) then
+    return { DivineWindow.GENERAL_SPECIALISATION }
+  end
+
+  local names = {};
+  for i = 1, GetNumSpecializations() do
+    local _, name = GetSpecializationInfo(i);
+    names[i] = name;
+  end
+  return names
+end
+
+function DivineWindow.Utilities.getActiveSpecialisationName()
+  if (not DivineWindow.Utilities.hasSpecialisations()) then
+    return DivineWindow.GENERAL_SPECIALISATION
+  end
+
+  local activeSpecialisationId = GetSpecialization();
+  if (not activeSpecialisationId) then
+    return nil
+  end
+
+  local _, name = GetSpecializationInfo(activeSpecialisationId);
+  return name
+end
+
+-- Text for tabs and titles: the specialisation name, or "Window configuration" for General.
+function DivineWindow.Utilities.getSpecialisationDisplayName(specialisation)
+  if (specialisation == DivineWindow.GENERAL_SPECIALISATION) then
+    return DivineWindow.Locales[DivineWindow.language].Labels.generalSpecialisation or specialisation
+  end
+
+  return specialisation
+end
+
+-- Every class may use every window, so this only checks that the player's specialisation (or
+-- "General" on versions without specialisations) is known. Class addons only provide defaults.
+function DivineWindow.Utilities.classHasSupportedSpecialisation()
+  local hasSpecialisation = DivineWindow.specialisation ~= nil;
+  DivineWindow.Utilities.debugPrint("Has specialisation: " .. tostring(hasSpecialisation))
+  return hasSpecialisation
 end
 
 function DivineWindow.Utilities.ShowError(message)

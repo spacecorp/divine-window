@@ -11,14 +11,16 @@ function DivineWindow.ConfigurationScreen.userHasSpecialisationSetUp()
 end
 
 function DivineWindow.ConfigurationScreen.prefillTalents()
-    local numberOfSpecialisations = DivineWindow.numberOfSpecialisations;
     local className = select(2, UnitClass("player"));
-    for i = 1, numberOfSpecialisations do
-        local _, specialisation, _, _, _, _ = GetSpecializationInfo(i);
+    for _, specialisation in ipairs(DivineWindow.Utilities.getSpecialisationNames()) do
 
-        if (DivineWindow.Utilities.tableContainsValue(DivineWindow.supportedSpecialisations, specialisation)) then
-            local defaultSettings = DivineWindow.Windows[className].DefaultSettings[specialisation];
-            DivineWindowLocalVars.specialisation[specialisation] = defaultSettings;
+        -- Class defaults come from the class addon (e.g. DivineWindow_Paladin), which may not be loaded.
+        local classWindows = DivineWindow.Windows[className];
+        local classDefaults = classWindows and classWindows.DefaultSettings and
+            classWindows.DefaultSettings[specialisation];
+
+        if (classDefaults and DivineWindow.Utilities.tableContainsValue(DivineWindow.supportedSpecialisations, specialisation)) then
+            DivineWindowLocalVars.specialisation[specialisation] = classDefaults;
         else
             local defaultSettings = {
                 isSetUp = true,
@@ -70,6 +72,13 @@ function DivineWindow.ConfigurationScreen.openConfigTab(tabIndex)
     end
 
     DivineWindow.ConfigurationScreen.activeTab = tabIndex;
+
+    -- tab buttons: general = 1, specialisations = 2..n+1, about = n+2 (see generateScreensForAllSpecialisations)
+    local configFrame = DivineWindow.ConfigurationScreen.frame;
+    if (configFrame and configFrame.Tabs and PanelTemplates_SetTab) then
+        PanelTemplates_SetTab(configFrame, tabIndex + 1);
+    end
+
     if (tabIndex == 0) then
         _G[DivineWindow.ConfigurationScreen.FrameNames.CONFIG_SCREEN]:Show();
         _G[DivineWindow.ConfigurationScreen.FrameNames.CONFIG_SCREEN_TITLE]:SetText(currLanguage.GeneralTab
@@ -92,10 +101,11 @@ function DivineWindow.ConfigurationScreen.openConfigTab(tabIndex)
         _G[DivineWindow.ConfigurationScreen.FrameNames.INFO_SCREEN_TEXT_LEFT_NAME]:Show();
         _G[DivineWindow.ConfigurationScreen.FrameNames.INFO_SCREEN_TEXT_RIGHT_NAME]:Show();
     else
-        local _, specialisation = GetSpecializationInfo(tabIndex)
+        local specialisation = DivineWindow.Utilities.getSpecialisationNames()[tabIndex];
         _G[DivineWindow.ConfigurationScreen.FrameNames.INFO_SCREEN]:Hide();
         _G[DivineWindow.ConfigurationScreen.FrameNames.CONFIG_SCREEN]:Hide();
-        _G[DivineWindow.ConfigurationScreen.FrameNames.CONFIG_SCREEN_TITLE]:SetText(specialisation);
+        _G[DivineWindow.ConfigurationScreen.FrameNames.CONFIG_SCREEN_TITLE]:SetText(
+            DivineWindow.Utilities.getSpecialisationDisplayName(specialisation));
     end
 end
 
@@ -195,7 +205,7 @@ local function initializeAboutPage()
         DivineWindow.Locales[DivineWindow.language].InfoTab.textTitle,
         toReplace);
     title:SetText(titleString)
-    title:SetFont("Interface\\AddOns\\DivineWindow\\Src\\Assets\\BeyondWonderland.ttf", 24, "THICK")
+    title:SetFont("Interface\\AddOns\\DivineWindow\\Src\\Assets\\BeyondWonderland.ttf", 24, "THICKOUTLINE")
     title:SetWidth(300)
     title:SetHeight(200)
 
@@ -242,8 +252,21 @@ function DivineWindow.ConfigurationScreen.eventHandler(_, event, addonName, ...)
         initializeAboutPage();
     end
 
-    if (event == "PLAYER_TALENT_UPDATE") then
-        if (C_SpecializationInfo.IsInitialized()) then
+    -- Versions without specialisations: build the single "Window configuration" tab once, at login
+    -- (PLAYER_TALENT_UPDATE may never come, and building the tabs twice would duplicate them).
+    local isLoginOrTalentEvent = event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_TALENT_UPDATE";
+    local shouldBuild;
+    -- The screens are built once: every build adds new tabs and rows on top of the existing ones.
+    if (DivineWindow.Utilities.hasSpecialisations()) then
+        shouldBuild = event == "PLAYER_TALENT_UPDATE";
+    else
+        shouldBuild = isLoginOrTalentEvent;
+    end
+    shouldBuild = shouldBuild and not DivineWindow.ConfigurationScreen.screensGenerated;
+
+    if (shouldBuild) then
+        if (DivineWindow.Utilities.specialisationsReady()) then
+            DivineWindow.ConfigurationScreen.screensGenerated = true;
             local showConfigurationScreen = false;
             local hasSetup = DivineWindow.ConfigurationScreen.userHasSpecialisationSetUp();
             if (hasSetup == false) then

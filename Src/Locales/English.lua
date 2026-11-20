@@ -80,11 +80,26 @@ DivineWindow.Locales.English.Labels = {
     leftPowerBar = "Left Power Bar",
     rightPowerBar = "Right Power Bar",
     preview = "View",
-    spellName = "Buff/Debuff or Spell [name or id]",
+    spellName = "Buff/Debuff or Spell (type to search)",
     timer = "Type of timer",
     windowPart = "Stained glass assignment",
     delete = "Delete",
     addRow = "Add row",
+    invert = "Invert",
+    invertTooltip = "Reverse this part: fully lit while the timer or aura is off, and lighting up as it runs out.",
+    generalSpecialisation = "Window configuration", -- tab name on WoW versions without specialisations
+}
+
+-- Spell search dropdown of the Buff/Debuff or Spell input
+DivineWindow.Locales.English.SpellSearch = {
+    startTyping = "Start typing to find other buffs and debuffs...",
+    noOwnSpells = "No spells found for your character",
+    noResults = "No matching buffs or debuffs",
+    moreResults = "%d more... keep typing to narrow down",
+    noSpellData = "No spell data available for this WoW version",
+    useAsTyped = "Use \"%s\" as typed",
+    npc = "NPC",
+    secretNote = "* May not be trackable in combat",
 }
 
 -- Power bar types
@@ -143,6 +158,7 @@ DivineWindow.Locales.English.CountType = {
     COOLDOWN_TIMER = "Cooldown timer",
     COOLDOWN_STACKS = "Cooldown stacks",
     ON_OFF = "On/Off",
+    CHANNELING = "Channeling timer",
 }
 
 DivineWindow.Locales.English.AnimationType = {

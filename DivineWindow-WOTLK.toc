@@ -36,3 +36,5 @@ Src/Windows/Index.xml
 Src/Interface/Index.xml
 Src/ConfigurationScreen/Index.xml
 Src/Commands/Index.xml
+
+SpellData/Data/WOTLK.lua

@@ -4,4 +4,5 @@ DivineWindow.Constants.CountType = {
     COOLDOWN_TIMER = "COOLDOWN_TIMER",
     COOLDOWN_STACKS = "COOLDOWN_STACKS",
     ON_OFF = "ON_OFF",
+    CHANNELING = "CHANNELING",
 };

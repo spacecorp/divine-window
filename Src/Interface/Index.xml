@@ -5,6 +5,8 @@
     <Script file="Src/Interface/Index.lua"/>
     <Script file="Src/Interface/Interface.lua"/>
     <Script file="Src/Interface/PlayerStatus.lua"/>
+    <Script file="Src/Interface/SteppedTexture.lua"/>
+    <Script file="Src/Interface/AuraTracker.lua"/>
     <Script file="Src/Interface/PowerBar.lua"/>
     <Script file="Src/Interface/WindowParts.lua"/>
     <Frame name="DivineWindow_Interface" clipChildren="true" toplevel="false" frameStrata="LOW" movable="false" enableMouse="false" hidden="false" parent="UIParent" clampedToScreen="true">
@@ -205,7 +207,43 @@
                 </Offset>
               </Anchor>
             </Anchors>
-          </Texture>  
+          </Texture>
+            <Texture alpha="1" hidden="false" name="DivineWindow_Interface_PART_10">
+            <Size>
+              <AbsDimension x="1024" y="1024"/>
+            </Size>
+            <Anchors>
+              <Anchor point="TOPLEFT" relativeTo="$parent">
+                <Offset>
+                  <AbsDimension x="-180" y="0"/>
+                </Offset>
+              </Anchor>
+            </Anchors>
+          </Texture>
+            <Texture alpha="1" hidden="false" name="DivineWindow_Interface_PART_11">
+            <Size>
+              <AbsDimension x="1024" y="1024"/>
+            </Size>
+            <Anchors>
+              <Anchor point="TOPLEFT" relativeTo="$parent">
+                <Offset>
+                  <AbsDimension x="-180" y="0"/>
+                </Offset>
+              </Anchor>
+            </Anchors>
+          </Texture>
+            <Texture alpha="1" hidden="false" name="DivineWindow_Interface_PART_12">
+            <Size>
+              <AbsDimension x="1024" y="1024"/>
+            </Size>
+            <Anchors>
+              <Anchor point="TOPLEFT" relativeTo="$parent">
+                <Offset>
+                  <AbsDimension x="-180" y="0"/>
+                </Offset>
+              </Anchor>
+            </Anchors>
+          </Texture>
         </Layer>
         <Layer level="ARTWORK">
             <Texture alpha="1"  hidden="false" name="DivineWindow_Interface_GRAIN">
